@@ -1,0 +1,2289 @@
+<!DOCTYPE html>
+<html lang="en">
+  <head>
+    <!-- ------------------------------------
+         SAFESHORES - LAKE ERIE COASTAL WATER QUALITY MONITOR
+         -------------------------------------
+         Created by: Joshua Bighouse  AI tools used to help with structure and the development and debugging of code snippets
+         Purpose: Community water safety project
+         Inspiration: Needed real-time water quality info for
+                      post-run cool-off swims during cross country training
+         Acknowledgements:   Built using ArcGIS Online through an internship at IPS Group LLC which runs IPS Geoservices. 
+                             App design was influenced by environmental monitoring platforms including iNaturalist and CliffWatch 
+                             
+
+         Version: 2.10.25 v1 - Initial release
+         (I will be adding email alerts to the next release)
+      
+         -------------------------------------- -->
+
+    <!-- Standard meta tags for responsive mobile layout -->
+    <meta charset="UTF-8" />
+    <meta
+      name="viewport"
+      content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no"
+    />
+    <!-- iOS PWA support -->
+    <meta name="apple-mobile-web-app-capable" content="yes" />
+    <meta
+      name="apple-mobile-web-app-status-bar-style"
+      content="default"
+    />
+    <!-- Theme color for browser chrome (light teal) -->
+    <meta name="theme-color" content="#0d7377" />
+
+    <title>SafeShores - Lake Erie Water Quality Monitor</title>
+
+    <!-- PWA manifest link -->
+    <link rel="manifest" href="manifest.json" />
+    <!-- Uncomment when icons are ready:
+    <link rel="apple-touch-icon" href="icon-192.png" />
+    -->
+
+    <!-- ================================================================
+         ESRI ArcGIS JS API 4.28 (uses LIGHT theme to be more beach-friendly UI)
+         ================================================================ -->
+    <link
+      rel="stylesheet"
+      href="https://js.arcgis.com/4.28/esri/themes/light/main.css"
+    />
+    <script src="https://js.arcgis.com/4.28/"></script>
+
+    <style>
+      /* ================================================================
+         CSS RESET
+         ================================================================ */
+      * {
+        margin: 0;
+        padding: 0;
+        box-sizing: border-box;
+      }
+
+      /* ================================================================
+         BODY & BASE STYLES
+         Light, clean beach theme 
+         ================================================================ */
+      body {
+        font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto,
+          sans-serif;
+        background: #f0f9ff;
+        color: #1a202c;
+        overflow: hidden;
+      }
+
+      /* ================================================================
+         HEADER BAR
+         Fixed top bar with logo, install button, and status badge.
+         Teal gradient used to resemble clean water.
+         ================================================================ */
+      #header {
+        position: fixed;
+        top: 0;
+        left: 0;
+        right: 0;
+        z-index: 100;
+        background: linear-gradient(135deg, #0d7377 0%, #14919b 100%);
+        padding: 12px 16px;
+        display: flex;
+        align-items: center;
+        justify-content: space-between;
+        box-shadow: 0 2px 10px rgba(0, 0, 0, 0.15);
+      }
+      .logo {
+        display: flex;
+        align-items: center;
+        gap: 10px;
+      }
+      .logo-icon {
+        font-size: 28px;
+      }
+      .logo-text {
+        font-size: 20px;
+        font-weight: 700;
+        letter-spacing: -0.5px;
+        color: #ffffff;
+      }
+      .logo-subtitle {
+        font-size: 11px;
+        opacity: 0.85;
+        margin-top: 2px;
+        color: #e0f7fa;
+      }
+      .header-right {
+        display: flex;
+        align-items: center;
+        gap: 10px;
+      }
+
+      /* Install / Share button in header */
+      #share-btn {
+        background: rgba(255, 255, 255, 0.2);
+        border: 1px solid rgba(255, 255, 255, 0.4);
+        border-radius: 8px;
+        padding: 6px 10px;
+        color: white;
+        font-size: 14px;
+        cursor: pointer;
+        display: flex;
+        align-items: center;
+        gap: 5px;
+        transition: background 0.2s;
+      }
+      #share-btn:hover {
+        background: rgba(255, 255, 255, 0.3);
+      }
+      .share-icon {
+        font-size: 16px;
+      }
+      .share-text {
+        font-size: 12px;
+        font-weight: 500;
+      }
+      /* Hide "Install" text on very narrow screens */
+      @media (max-width: 380px) {
+        .share-text {
+          display: none;
+        }
+      }
+
+      /* ================================================================
+         STATUS BADGE (header, right side)
+         Three states: safe (green), caution (amber), danger (red)
+         ================================================================ */
+      #status-badge {
+        padding: 6px 12px;
+        border-radius: 20px;
+        font-size: 12px;
+        font-weight: 600;
+        display: flex;
+        align-items: center;
+        gap: 6px;
+      }
+      .status-safe {
+        background: #c6f6d5;
+        color: #22543d;
+      }
+      .status-caution {
+        background: #fefcbf;
+        color: #744210;
+      }
+      .status-danger {
+        background: #fed7d7;
+        color: #742a2a;
+        animation: pulse 1s infinite;
+      }
+      .status-unknown {
+        background: #e2e8f0;
+        color: #4a5568;
+      }
+      @keyframes pulse {
+        0%, 100% { opacity: 1; }
+        50% { opacity: 0.7; }
+      }
+
+      /* ================================================================
+         MAP CONTAINER
+         Fills the space between header (60px) and footer (60px)
+         ================================================================ */
+      #viewDiv {
+        position: fixed;
+        top: 60px;
+        left: 0;
+        right: 0;
+        bottom: 60px;
+      }
+
+      /* ================================================================
+         FOOTER BAR
+         Shows count of beaches by status: Danger | Caution | Safe
+         ================================================================ */
+      #footer {
+        position: fixed;
+        bottom: 0;
+        left: 0;
+        right: 0;
+        z-index: 100;
+        background: #ffffff;
+        padding: 8px 16px;
+        display: flex;
+        justify-content: space-around;
+        border-top: 1px solid #e2e8f0;
+        box-shadow: 0 -2px 10px rgba(0, 0, 0, 0.05);
+      }
+      .footer-stat {
+        text-align: center;
+        flex: 1;
+      }
+      .stat-value {
+        font-size: 18px;
+        font-weight: 700;
+      }
+      .stat-label {
+        font-size: 10px;
+        opacity: 0.7;
+        text-transform: uppercase;
+      }
+      .stat-danger {
+        color: #e53e3e;
+      }
+      .stat-caution {
+        color: #d69e2e;
+      }
+      .stat-safe {
+        color: #38a169;
+      }
+      .stat-unknown {
+        color: #a0aec0;
+      }
+
+      /* ================================================================
+         LIVE CONDITIONS WIDGET (top-right overlay on map)
+         Shows water temp, chlorophyll proxy, and wind — key HAB indicators
+         ================================================================ */
+      #conditions-widget {
+        position: fixed;
+        top: 70px;
+        right: 10px;
+        z-index: 51;
+        background: rgba(255, 255, 255, 0.95);
+        border-radius: 12px;
+        padding: 12px;
+        min-width: 160px;
+        max-width: calc(100vw - 20px);
+        box-shadow: 0 4px 15px rgba(0, 0, 0, 0.1);
+        border: 1px solid #e2e8f0;
+      }
+      @media (max-width: 400px) {
+        #conditions-widget {
+          right: 5px;
+          padding: 10px;
+          min-width: 140px;
+        }
+        .condition-value { font-size: 12px; }
+        .condition-label { font-size: 10px; }
+      }
+      #conditions-widget.with-alert {
+        top: 110px;
+      }
+      .conditions-title {
+        font-size: 11px;
+        font-weight: 600;
+        color: #4a5568;
+        text-transform: uppercase;
+        letter-spacing: 0.5px;
+        margin-bottom: 10px;
+        padding-bottom: 6px;
+        border-bottom: 1px solid #e2e8f0;
+      }
+      .condition-row {
+        display: flex;
+        align-items: center;
+        gap: 8px;
+        margin-bottom: 8px;
+        font-size: 13px;
+      }
+      .condition-row:last-child {
+        margin-bottom: 0;
+      }
+      .condition-icon {
+        font-size: 16px;
+        width: 24px;
+        text-align: center;
+      }
+      .condition-value {
+        font-weight: 600;
+        color: #1a202c;
+        flex: 1;
+      }
+      .condition-label {
+        font-size: 11px;
+        color: #718096;
+      }
+      .conditions-updated {
+        font-size: 9px;
+        color: #a0aec0;
+        text-align: center;
+        margin-top: 8px;
+        padding-top: 8px;
+        border-top: 1px solid #e2e8f0;
+      }
+      /* Color highlights for elevated/danger conditions */
+      .condition-value.elevated {
+        color: #d69e2e;
+      }
+      .condition-value.high {
+        color: #e53e3e;
+      }
+      .condition-value.critical {
+        color: #c53030;
+        animation: pulse 1s infinite;
+      }
+
+      /* ================================================================
+         ESRI POPUP OVERRIDES
+         Light-themed popups to match SafeShores aesthetic
+         ================================================================ */
+      .esri-popup { z-index: 500 !important; }
+      .esri-popup__wrapper { z-index: 500 !important; }
+      .esri-popup__pointer { z-index: 500 !important; }
+      .esri-popup__main-container {
+        z-index: 500 !important;
+        background: #ffffff !important;
+        color: #1a202c !important;
+        border-radius: 12px !important;
+        max-width: 380px !important;
+        box-shadow: 0 8px 30px rgba(0, 0, 0, 0.15) !important;
+      }
+      .esri-ui { z-index: 500 !important; }
+      .esri-popup__header {
+        background: #f7fafc !important;
+        border-radius: 12px 12px 0 0 !important;
+      }
+      .esri-popup__header-title {
+        color: #1a202c !important;
+        font-weight: 600 !important;
+      }
+      .esri-popup__content { padding: 16px !important; }
+      .esri-popup__footer {
+        background: #f7fafc !important;
+        border-radius: 0 0 12px 12px !important;
+      }
+      .esri-popup__button { color: #0d7377 !important; }
+
+      /* ================================================================
+         POPUP CONTENT STYLES
+         Status badges, data rows, advisory text
+         ================================================================ */
+      .popup-content {
+        font-size: 14px;
+        line-height: 1.5;
+      }
+      .popup-status-badge {
+        display: inline-block;
+        padding: 6px 14px;
+        border-radius: 20px;
+        font-weight: 700;
+        font-size: 14px;
+        margin-bottom: 12px;
+      }
+      .popup-status-safe {
+        background: linear-gradient(135deg, #38a169, #48bb78);
+        color: white;
+      }
+      .popup-status-caution {
+        background: linear-gradient(135deg, #d69e2e, #ecc94b);
+        color: white;
+      }
+      .popup-status-danger {
+        background: linear-gradient(135deg, #c53030, #e53e3e);
+        color: white;
+        animation: pulse 1s infinite;
+      }
+      .popup-status-unknown {
+        background: linear-gradient(135deg, #718096, #a0aec0);
+        color: white;
+      }
+      .popup-section {
+        margin-bottom: 12px;
+        padding-bottom: 12px;
+        border-bottom: 1px solid #e2e8f0;
+      }
+      .popup-section:last-child {
+        margin-bottom: 0;
+        padding-bottom: 0;
+        border-bottom: none;
+      }
+      .popup-section-title {
+        font-size: 11px;
+        font-weight: 600;
+        color: #718096;
+        text-transform: uppercase;
+        letter-spacing: 0.5px;
+        margin-bottom: 8px;
+      }
+      .popup-row {
+        display: flex;
+        justify-content: space-between;
+        margin-bottom: 4px;
+        font-size: 13px;
+      }
+      .popup-label { color: #718096; }
+      .popup-value {
+        font-weight: 500;
+        color: #1a202c;
+      }
+      .popup-advisory {
+        background: #f7fafc;
+        border-radius: 8px;
+        padding: 10px;
+        font-size: 13px;
+        line-height: 1.5;
+        color: #2d3748;
+        margin-top: 6px;
+        border-left: 4px solid #0d7377;
+      }
+      .popup-advisory.danger-advisory {
+        border-left-color: #e53e3e;
+        background: #fff5f5;
+      }
+      .popup-advisory.caution-advisory {
+        border-left-color: #d69e2e;
+        background: #fffff0;
+      }
+      .popup-source {
+        font-size: 10px;
+        color: #a0aec0;
+        margin-top: 12px;
+        padding-top: 8px;
+        border-top: 1px solid #e2e8f0;
+        text-align: center;
+      }
+      .popup-source a {
+        color: #0d7377;
+        text-decoration: none;
+      }
+      .popup-source a:hover {
+        text-decoration: underline;
+      }
+
+      /* ================================================================
+         USER REPORT POPUP STYLES
+         ================================================================ */
+      .report-status {
+        display: inline-block;
+        padding: 4px 10px;
+        border-radius: 12px;
+        font-size: 11px;
+        font-weight: 600;
+        text-transform: uppercase;
+      }
+      .report-status.Pending,
+      .report-status.Unverified {
+        background: #fefcbf;
+        color: #744210;
+      }
+      .report-status.Yes {
+        background: #c6f6d5;
+        color: #22543d;
+      }
+      .report-status.Expired {
+        background: #e2e8f0;
+        color: #718096;
+      }
+      .report-description {
+        background: #f7fafc;
+        border-radius: 8px;
+        padding: 12px;
+        margin: 10px 0;
+        font-size: 14px;
+        line-height: 1.5;
+        color: #2d3748;
+      }
+      .report-meta {
+        font-size: 12px;
+        color: #718096;
+        margin-top: 8px;
+      }
+
+      /* ================================================================
+         ALERT BANNER (below header, for danger conditions)
+         ================================================================ */
+      #alert-banner {
+        display: none;
+        position: fixed;
+        top: 60px;
+        left: 0;
+        right: 0;
+        z-index: 99;
+        padding: 12px 16px;
+        text-align: center;
+        font-weight: 600;
+        font-size: 14px;
+        color: white;
+      }
+      #alert-banner.show { display: block; }
+      #alert-banner.danger {
+        background: linear-gradient(135deg, #c53030, #e53e3e);
+        animation: pulse 1s infinite;
+      }
+      #alert-banner.caution {
+        background: linear-gradient(135deg, #d69e2e, #ecc94b);
+        color: #744210;
+      }
+
+      /* ================================================================
+         MAP LEGEND (bottom-left overlay)
+         Shows beach status colors + user report symbols
+         ================================================================ */
+      .map-legend {
+        position: fixed;
+        bottom: 70px;
+        left: 10px;
+        background: rgba(255, 255, 255, 0.95);
+        border-radius: 8px;
+        padding: 10px;
+        font-size: 11px;
+        z-index: 50;
+        border: 1px solid #e2e8f0;
+        box-shadow: 0 2px 10px rgba(0, 0, 0, 0.08);
+      }
+      .map-copyright {
+        position: fixed;
+        bottom: 58px;
+        left: 50%;
+        transform: translateX(-50%);
+        font-size: 10px;
+        color: rgba(0, 0, 0, 0.5);
+        z-index: 50;
+        font-family: "Avenir Next", "Avenir", "Helvetica Neue", Helvetica, Arial,
+          sans-serif;
+        font-weight: 400;
+        letter-spacing: 0.02em;
+      }
+      .legend-title {
+        font-weight: 600;
+        margin-bottom: 8px;
+        color: #4a5568;
+        text-transform: uppercase;
+        font-size: 10px;
+      }
+      .legend-section {
+        margin-bottom: 10px;
+        padding-bottom: 8px;
+        border-bottom: 1px solid #e2e8f0;
+      }
+      .legend-section:last-child {
+        margin-bottom: 0;
+        padding-bottom: 0;
+        border-bottom: none;
+      }
+      .legend-section-title {
+        font-size: 9px;
+        color: #a0aec0;
+        margin-bottom: 6px;
+        text-transform: uppercase;
+        letter-spacing: 0.5px;
+      }
+      .legend-item {
+        display: flex;
+        align-items: center;
+        gap: 8px;
+        margin-bottom: 4px;
+        color: #4a5568;
+      }
+      .legend-symbol {
+        width: 16px;
+        height: 16px;
+        display: flex;
+        align-items: center;
+        justify-content: center;
+      }
+      /* Report pin shapes for legend */
+      .legend-pin {
+        width: 14px;
+        height: 18px;
+        position: relative;
+      }
+      .legend-pin-unverified {
+        background: #dd6b20;
+        border-radius: 50% 50% 50% 0;
+        transform: rotate(-45deg);
+        border: 2px dashed rgba(255, 255, 255, 0.6);
+      }
+      .legend-pin-verified {
+        background: #48bb78;
+        border-radius: 50% 50% 50% 0;
+        transform: rotate(-45deg);
+        border: 2px solid white;
+      }
+
+      /* ================================================================
+         LOADING OVERLAY
+         Shown on initial page load until the map is ready
+         ================================================================ */
+      .loading-overlay {
+        position: fixed;
+        top: 0; left: 0; right: 0; bottom: 0;
+        background: #f0f9ff;
+        display: flex;
+        flex-direction: column;
+        align-items: center;
+        justify-content: center;
+        z-index: 1000;
+        transition: opacity 0.5s;
+      }
+      .loading-overlay.hidden {
+        opacity: 0;
+        pointer-events: none;
+      }
+      .loading-spinner {
+        width: 60px;
+        height: 60px;
+        border: 4px solid #e2e8f0;
+        border-top-color: #0d7377;
+        border-radius: 50%;
+        animation: spin 1s linear infinite;
+      }
+      @keyframes spin { to { transform: rotate(360deg); } }
+      .loading-text {
+        margin-top: 20px;
+        font-size: 16px;
+        color: #718096;
+      }
+
+      /* ================================================================
+         FLOATING ACTION BUTTONS (right side + left side)
+         Report button (bottom-right), Home + About (left side)
+         Future Improvement- add alert button to add email alerts 
+         ================================================================ */
+      #report-btn {
+        position: fixed;
+        bottom: 75px;
+        right: 15px;
+        z-index: 52;
+        background: linear-gradient(135deg, #0d7377 0%, #14919b 100%);
+        border: none;
+        border-radius: 25px;
+        padding: 12px 20px;
+        color: white;
+        font-size: 15px;
+        font-weight: 600;
+        cursor: pointer;
+        display: flex;
+        align-items: center;
+        gap: 8px;
+        box-shadow: 0 4px 15px rgba(13, 115, 119, 0.4);
+        animation: glow 2s ease-in-out infinite;
+      }
+      @keyframes glow {
+        0%, 100% { box-shadow: 0 4px 15px rgba(13, 115, 119, 0.4); }
+        50% { box-shadow: 0 4px 25px rgba(13, 115, 119, 0.7); }
+      }
+      #report-btn:active { transform: scale(0.95); }
+      #report-btn .btn-icon { font-size: 18px; }
+      #report-btn.picking-mode {
+        background: linear-gradient(135deg, #ed8936 0%, #dd6b20 100%);
+        animation: none;
+      }
+
+      /* Home button — returns map to Lake Erie overview */
+      #home-btn {
+        position: fixed;
+        top: 150px;
+        left: 10px;
+        z-index: 52;
+        background: rgba(255, 255, 255, 0.95);
+        border: 1px solid #e2e8f0;
+        border-radius: 50%;
+        width: 44px;
+        height: 44px;
+        color: #2d3748;
+        font-size: 20px;
+        cursor: pointer;
+        display: flex;
+        align-items: center;
+        justify-content: center;
+        box-shadow: 0 2px 10px rgba(0, 0, 0, 0.1);
+        transition: all 0.2s;
+      }
+      #home-btn:hover {
+        background: #ffffff;
+        transform: scale(1.05);
+      }
+
+      /* About / Info button */
+      #about-btn {
+        position: fixed;
+        top: 204px;
+        left: 10px;
+        z-index: 52;
+        background: rgba(255, 255, 255, 0.95);
+        border: 1px solid #e2e8f0;
+        border-radius: 50%;
+        width: 44px;
+        height: 44px;
+        color: #2d3748;
+        font-size: 20px;
+        cursor: pointer;
+        display: flex;
+        align-items: center;
+        justify-content: center;
+        box-shadow: 0 2px 10px rgba(0, 0, 0, 0.1);
+        transition: all 0.2s;
+      }
+      #about-btn:hover {
+        background: #ffffff;
+        transform: scale(1.05);
+      }
+
+      /* ================================================================
+         WELCOME / INSTALL BANNER
+         Shown on first load to explain the app
+         ================================================================ */
+      .install-banner {
+        display: none;
+        position: fixed;
+        bottom: 70px;
+        left: 10px;
+        right: 10px;
+        background: linear-gradient(135deg, #0d7377 0%, #14919b 100%);
+        border-radius: 12px;
+        padding: 16px;
+        z-index: 150;
+        box-shadow: 0 4px 20px rgba(0, 0, 0, 0.2);
+        border: 1px solid rgba(255, 255, 255, 0.2);
+        color: white;
+      }
+      .install-banner.show { display: block; }
+      .install-header {
+        display: flex;
+        align-items: center;
+        gap: 12px;
+      }
+      .install-icon { font-size: 32px; }
+      .install-text { flex: 1; }
+      .install-text strong {
+        display: block;
+        font-size: 16px;
+        margin-bottom: 2px;
+      }
+      .install-text small {
+        font-size: 13px;
+        opacity: 0.85;
+      }
+      .install-close {
+        background: transparent;
+        border: none;
+        color: white;
+        font-size: 24px;
+        cursor: pointer;
+        opacity: 0.7;
+      }
+      .install-btn {
+        display: none;
+        width: 100%;
+        margin-top: 12px;
+        padding: 12px;
+        background: #48bb78;
+        border: none;
+        border-radius: 8px;
+        color: white;
+        font-size: 16px;
+        font-weight: 600;
+        cursor: pointer;
+      }
+      /* Tutorial steps inside welcome banner */
+      .ios-instructions {
+        display: none;
+        margin-top: 16px;
+        padding-top: 12px;
+        border-top: 1px solid rgba(255, 255, 255, 0.2);
+      }
+      .ios-instructions.show { display: block; }
+      .ios-step {
+        display: flex;
+        align-items: center;
+        gap: 12px;
+        margin-bottom: 10px;
+        font-size: 14px;
+      }
+      .ios-step-num {
+        width: 24px;
+        height: 24px;
+        min-width: 24px;
+        background: rgba(255, 255, 255, 0.2);
+        border-radius: 50%;
+        display: flex;
+        align-items: center;
+        justify-content: center;
+        font-weight: 600;
+        font-size: 13px;
+      }
+
+      /* ================================================================
+         SHARE / INSTALL MODAL
+         Platform-specific install instructions
+         ================================================================ */
+      .share-modal {
+        display: none;
+        position: fixed;
+        top: 0; left: 0; right: 0; bottom: 0;
+        background: rgba(0, 0, 0, 0.6);
+        z-index: 250;
+        align-items: center;
+        justify-content: center;
+        padding: 20px;
+      }
+      .share-modal.show { display: flex; }
+      .share-modal-content {
+        background: #ffffff;
+        border-radius: 16px;
+        padding: 24px;
+        max-width: 400px;
+        width: 100%;
+        border: 1px solid #e2e8f0;
+        text-align: center;
+        box-shadow: 0 20px 60px rgba(0, 0, 0, 0.2);
+      }
+      .share-modal-title {
+        font-size: 20px;
+        font-weight: 700;
+        margin-bottom: 8px;
+        color: #1a202c;
+      }
+      .share-modal-subtitle {
+        font-size: 14px;
+        color: #718096;
+        margin-bottom: 20px;
+      }
+      .share-modal-icon {
+        font-size: 48px;
+        margin-bottom: 16px;
+      }
+      .share-modal-steps {
+        text-align: left;
+        margin-bottom: 20px;
+      }
+      .share-modal-step {
+        display: flex;
+        align-items: flex-start;
+        gap: 12px;
+        margin-bottom: 16px;
+        font-size: 14px;
+        line-height: 1.4;
+        color: #2d3748;
+      }
+      .share-modal-step-num {
+        width: 28px;
+        height: 28px;
+        min-width: 28px;
+        background: #0d7377;
+        color: white;
+        border-radius: 50%;
+        display: flex;
+        align-items: center;
+        justify-content: center;
+        font-weight: 600;
+        font-size: 14px;
+      }
+      .share-modal-note {
+        background: rgba(13, 115, 119, 0.08);
+        border: 1px solid #0d7377;
+        border-radius: 8px;
+        padding: 12px;
+        font-size: 12px;
+        color: #0d7377;
+        margin-bottom: 20px;
+        text-align: left;
+      }
+      .share-modal-close {
+        background: #4a5568;
+        border: none;
+        border-radius: 8px;
+        padding: 12px 24px;
+        color: white;
+        font-size: 14px;
+        cursor: pointer;
+        width: 100%;
+      }
+
+      /* ================================================================
+         REPORT SUBMISSION MODAL (full-screen)
+         Users submit water quality sightings
+         ================================================================ */
+      .report-modal {
+        display: none;
+        position: fixed;
+        top: 0; left: 0; right: 0; bottom: 0;
+        background: rgba(0, 0, 0, 0.7);
+        z-index: 200;
+        overflow-y: auto;
+      }
+      .report-modal.show { display: block; }
+      .report-modal-content {
+        background: #ffffff;
+        min-height: 100%;
+        padding: 20px;
+        padding-bottom: 40px;
+      }
+      .report-modal-header {
+        display: flex;
+        align-items: center;
+        justify-content: space-between;
+        margin-bottom: 20px;
+        padding-bottom: 15px;
+        border-bottom: 1px solid #e2e8f0;
+      }
+      .report-modal-title {
+        font-size: 20px;
+        font-weight: 700;
+        color: #1a202c;
+      }
+      .report-modal-close {
+        background: transparent;
+        border: none;
+        color: #718096;
+        font-size: 28px;
+        cursor: pointer;
+        padding: 5px;
+      }
+      .form-group { margin-bottom: 20px; }
+      .form-label {
+        display: block;
+        font-size: 14px;
+        font-weight: 500;
+        margin-bottom: 8px;
+        color: #2d3748;
+      }
+      .form-label .required { color: #e53e3e; }
+      .form-input, .form-textarea, .form-select {
+        width: 100%;
+        padding: 12px;
+        background: #f7fafc;
+        border: 1px solid #e2e8f0;
+        border-radius: 8px;
+        color: #1a202c;
+        font-size: 16px;
+      }
+      .form-input:focus, .form-textarea:focus, .form-select:focus {
+        outline: none;
+        border-color: #0d7377;
+      }
+      .form-textarea {
+        min-height: 100px;
+        resize: vertical;
+      }
+      .form-select {
+        appearance: none;
+        background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' fill='%23718096' viewBox='0 0 24 24'%3E%3Cpath d='M7 10l5 5 5-5z'/%3E%3C/svg%3E");
+        background-repeat: no-repeat;
+        background-position: right 12px center;
+        background-size: 24px;
+      }
+
+      /* Location picker inside report form */
+      .location-picker {
+        background: #f7fafc;
+        border: 1px solid #e2e8f0;
+        border-radius: 8px;
+        padding: 15px;
+      }
+      .location-picker-header {
+        display: flex;
+        align-items: center;
+        gap: 10px;
+        margin-bottom: 12px;
+      }
+      .location-status {
+        display: flex;
+        align-items: center;
+        gap: 8px;
+        font-size: 14px;
+      }
+      .location-status.pending { color: #718096; }
+      .location-status.success { color: #38a169; }
+      .location-buttons {
+        display: flex;
+        gap: 10px;
+      }
+      .location-btn {
+        flex: 1;
+        padding: 10px;
+        border: 1px solid #e2e8f0;
+        border-radius: 6px;
+        background: #ffffff;
+        color: #2d3748;
+        font-size: 14px;
+        cursor: pointer;
+        display: flex;
+        align-items: center;
+        justify-content: center;
+        gap: 6px;
+      }
+      .location-btn:hover { background: #f7fafc; }
+      .location-btn.active {
+        border-color: #0d7377;
+        background: rgba(13, 115, 119, 0.05);
+      }
+      .location-mini-map {
+        height: 180px;
+        background: #f7fafc;
+        border-radius: 6px;
+        margin-top: 12px;
+        display: none;
+        position: relative;
+        overflow: hidden;
+      }
+      .location-mini-map.show { display: block; }
+      #mini-map-view { width: 100%; height: 100%; }
+      .mini-map-instructions {
+        position: absolute;
+        bottom: 8px;
+        left: 50%;
+        transform: translateX(-50%);
+        background: rgba(0, 0, 0, 0.6);
+        color: white;
+        padding: 4px 12px;
+        border-radius: 12px;
+        font-size: 11px;
+        pointer-events: none;
+        z-index: 10;
+      }
+
+      /* Submit button and success message */
+      .submit-btn {
+        width: 100%;
+        padding: 16px;
+        background: linear-gradient(135deg, #0d7377, #14919b);
+        border: none;
+        border-radius: 8px;
+        color: white;
+        font-size: 16px;
+        font-weight: 600;
+        cursor: pointer;
+        display: flex;
+        align-items: center;
+        justify-content: center;
+        gap: 8px;
+      }
+      .submit-btn:disabled {
+        opacity: 0.5;
+        cursor: not-allowed;
+      }
+      .success-message {
+        display: none;
+        text-align: center;
+        padding: 40px 20px;
+      }
+      .success-message.show { display: block; }
+      .success-icon { font-size: 64px; margin-bottom: 16px; }
+      .success-title {
+        font-size: 24px;
+        font-weight: 700;
+        margin-bottom: 8px;
+        color: #38a169;
+      }
+      .success-text {
+        font-size: 16px;
+        color: #718096;
+        margin-bottom: 24px;
+        line-height: 1.5;
+      }
+      .success-close-btn {
+        background: #4a5568;
+        border: none;
+        border-radius: 8px;
+        padding: 12px 32px;
+        color: white;
+        font-size: 16px;
+        cursor: pointer;
+      }
+
+      /* ================================================================
+         ABOUT / CREDITS MODAL
+         ================================================================ */
+      .credits-modal {
+        display: none;
+        position: fixed;
+        top: 0; left: 0; right: 0; bottom: 0;
+        background: rgba(0, 0, 0, 0.6);
+        z-index: 300;
+        align-items: center;
+        justify-content: center;
+        padding: 20px;
+      }
+      .credits-modal.show { display: flex; }
+      .credits-content {
+        background: #ffffff;
+        border-radius: 16px;
+        padding: 30px;
+        max-width: 400px;
+        width: 100%;
+        text-align: center;
+        border: 1px solid #e2e8f0;
+        position: relative;
+        box-shadow: 0 20px 60px rgba(0, 0, 0, 0.2);
+      }
+      .credits-close-x {
+        position: absolute;
+        top: 8px;
+        right: 8px;
+        background: transparent;
+        border: none;
+        color: #a0aec0;
+        font-size: 28px;
+        cursor: pointer;
+        padding: 5px;
+        line-height: 1;
+      }
+      .credits-close-x:hover { color: #4a5568; }
+      .credits-logo { font-size: 48px; margin-bottom: 10px; }
+      .credits-title {
+        font-size: 28px;
+        font-weight: 700;
+        margin-bottom: 4px;
+        color: #0d7377;
+      }
+      .credits-subtitle {
+        font-size: 14px;
+        color: #718096;
+        margin-bottom: 24px;
+      }
+      .credits-author {
+        background: rgba(13, 115, 119, 0.08);
+        border: 1px solid #0d7377;
+        border-radius: 12px;
+        padding: 16px;
+        margin-bottom: 20px;
+      }
+      .credits-author-label {
+        font-size: 11px;
+        color: #718096;
+        text-transform: uppercase;
+        letter-spacing: 1px;
+        margin-bottom: 4px;
+      }
+      .credits-author-name {
+        font-size: 18px;
+        font-weight: 600;
+        color: #0d7377;
+      }
+      .credits-affiliation {
+        font-size: 13px;
+        color: #718096;
+        margin-top: 4px;
+      }
+      .credits-purpose {
+        font-size: 12px;
+        color: #4a5568;
+        line-height: 1.5;
+        margin-bottom: 20px;
+        text-align: left;
+      }
+      .credits-close-btn {
+        background: #4a5568;
+        border: none;
+        border-radius: 8px;
+        padding: 10px 24px;
+        color: white;
+        font-size: 14px;
+        cursor: pointer;
+      }
+    </style>
+  </head>
+  <body>
+    <!-- ================================================================
+         LOADING OVERLAY - visible until map initializes
+         ================================================================ -->
+    <div class="loading-overlay" id="loading">
+      <div class="loading-spinner"></div>
+      <div class="loading-text">Loading SafeShores...</div>
+    </div>
+
+    <!-- ================================================================
+         HEADER - logo, install button, overall status badge
+         ================================================================ -->
+    <div id="header">
+      <div class="logo">
+        <span class="logo-icon">🏖️</span>
+        <div>
+          <div class="logo-text">SafeShores</div>
+          <div class="logo-subtitle">Lake Erie Water Quality</div>
+        </div>
+      </div>
+      <div class="header-right">
+        <button id="share-btn" aria-label="Install app">
+          <span class="share-icon">📤</span><span class="share-text">Install</span>
+        </button>
+        <div id="status-badge" class="status-unknown">
+          <span id="status-icon">⏳</span><span id="status-text">Loading...</span>
+        </div>
+      </div>
+    </div>
+
+    <!-- Alert banner appears below header when danger conditions exist -->
+    <div id="alert-banner"></div>
+
+    <!-- ================================================================
+         LIVE CONDITIONS WIDGET (top-right)
+         Shows latest toxin, advisory count, and last data update
+         ================================================================ -->
+    <div id="conditions-widget">
+      <div class="conditions-title">🔬 Beach Conditions</div>
+      <div class="condition-row">
+        <span class="condition-icon">🧪</span>
+        <span class="condition-value" id="current-toxin">--</span>
+        <span class="condition-label">Max Toxin</span>
+      </div>
+      <div class="condition-row">
+        <span class="condition-icon">⚠️</span>
+        <span class="condition-value" id="current-advisories">--</span>
+        <span class="condition-label">Advisories</span>
+      </div>
+      <div class="condition-row">
+        <span class="condition-icon">🏖️</span>
+        <span class="condition-value" id="current-safe-count">--</span>
+        <span class="condition-label">Beaches Safe</span>
+      </div>
+      <div class="conditions-updated" id="app-updated"></div>
+    </div>
+
+    <!-- ================================================================
+         MAP CONTAINER - Esri MapView renders here
+         ================================================================ -->
+    <div id="viewDiv"></div>
+
+    <!-- ================================================================
+         MAP LEGEND (bottom-left)
+         ================================================================ -->
+    <div class="map-legend">
+      <div class="legend-title">Legend</div>
+      <div class="legend-section">
+        <div class="legend-section-title">Beach Status</div>
+        <div class="legend-item">
+          <div class="legend-symbol">
+            <div style="width:12px;height:12px;border-radius:50%;background:#e53e3e;"></div>
+          </div>
+          <span>Danger</span>
+        </div>
+        <div class="legend-item">
+          <div class="legend-symbol">
+            <div style="width:12px;height:12px;border-radius:50%;background:#ecc94b;"></div>
+          </div>
+          <span>Caution</span>
+        </div>
+        <div class="legend-item">
+          <div class="legend-symbol">
+            <div style="width:12px;height:12px;border-radius:50%;background:#48bb78;"></div>
+          </div>
+          <span>Safe</span>
+        </div>
+        <div class="legend-item">
+          <div class="legend-symbol">
+            <div style="width:12px;height:12px;border-radius:50%;background:#a0aec0;"></div>
+          </div>
+          <span>Unknown</span>
+        </div>
+      </div>
+      <div class="legend-section">
+        <div class="legend-section-title">User Reports</div>
+        <div class="legend-item">
+          <div class="legend-symbol">
+            <div class="legend-pin legend-pin-unverified"></div>
+          </div>
+          <span>Unverified</span>
+        </div>
+        <div class="legend-item">
+          <div class="legend-symbol">
+            <div class="legend-pin legend-pin-verified"></div>
+          </div>
+          <span>Verified</span>
+        </div>
+      </div>
+    </div>
+
+    <div class="map-copyright">&copy; Joshua Bighouse</div>
+
+    <!-- ================================================================
+         FLOATING ACTION BUTTONS
+         ================================================================ -->
+    <button id="report-btn" aria-label="Submit a report">
+      <span class="btn-icon">📷</span><span>Report</span>
+    </button>
+    <button id="home-btn" aria-label="Return to Lake Erie overview" title="Return to Lake Erie">
+      🏠
+    </button>
+    <button id="about-btn" aria-label="About SafeShores" title="About SafeShores">
+      ℹ️
+    </button>
+
+    <!-- ================================================================
+         WELCOME BANNER (shown on load — explains the app)
+         ================================================================ -->
+    <div class="install-banner" id="install-banner">
+      <div class="install-header">
+        <div class="install-icon">🏖️</div>
+        <div class="install-text">
+          <strong>Welcome to SafeShores</strong>
+          <small>Real-time beach water quality for Lake Erie</small>
+        </div>
+        <button class="install-close" id="install-close">✕</button>
+      </div>
+      <div class="ios-instructions show" id="ios-instructions">
+        <div class="ios-step">
+          <span class="ios-step-num" style="font-size:20px;color:#fbd38d;">●</span>
+          <span><strong>Tap any beach point</strong> to see its status, advisory text, and toxin level</span>
+        </div>
+        <div class="ios-step">
+          <span class="ios-step-num" style="background:transparent;"></span>
+          <span><strong style="color:#38a169;">Green</strong> = Safe, <strong style="color:#ecc94b;">Yellow</strong> = Caution, <strong style="color:#e53e3e;">Red</strong> = Danger</span>
+        </div>
+        <div class="ios-step">
+          <span class="ios-step-num">🔬</span>
+          <span><strong>Beach Conditions</strong> (top-right) shows current toxin levels and advisory counts</span>
+        </div>
+        <div class="ios-step">
+          <span class="ios-step-num">📷</span>
+          <span><strong>Report:</strong> Help monitor the water — report algae blooms, discoloration, or odors</span>
+        </div>
+        <div class="ios-step">
+          <span class="ios-step-num">◆</span>
+          <span><strong>Tap</strong> <span style="color:#38a169;">◆</span> (verified) or <span style="color:#dd6b20;">◆</span> (unverified) diamonds to see community reports</span>
+        </div>
+      </div>
+      <button class="install-btn" id="install-btn" style="display:none;">Install App</button>
+    </div>
+
+    <!-- ================================================================
+         SHARE / INSTALL MODAL
+         ================================================================ -->
+    <div class="share-modal" id="share-modal">
+      <div class="share-modal-content">
+        <div class="share-modal-icon">📲</div>
+        <div class="share-modal-title">Install SafeShores</div>
+        <div class="share-modal-subtitle">Add to your home screen for quick access</div>
+        <div class="share-modal-steps" id="share-modal-steps"></div>
+        <div class="share-modal-note">
+          <strong>💡 Tip:</strong> Once installed, SafeShores works like a native app
+          with quick access from your home screen.
+        </div>
+        <button class="share-modal-close" id="share-modal-close">Got it</button>
+      </div>
+    </div>
+
+    <!-- ================================================================
+         ABOUT / CREDITS MODAL
+         ================================================================ -->
+    <div class="credits-modal" id="credits-modal">
+      <div class="credits-content">
+        <button class="credits-close-x" id="credits-close-x" aria-label="Close">✕</button>
+        <div class="credits-logo">🏖️</div>
+        <div class="credits-title">SafeShores</div>
+        <div class="credits-subtitle">Lake Erie Coastal Water Quality Monitor</div>
+        <div class="credits-author">
+          <div class="credits-author-label">Designed &amp; Developed by</div>
+          <div class="credits-author-name">Joshua Bighouse</div>
+        </div>
+        <div class="credits-purpose">
+          SafeShores was born out of a simple need — during cross country
+          training, my teammates and I would sometimes cool off in the waters of Lake Erie 
+          after runs, but we had no easy way to know if the water was safe.
+          This app pulls real-time data from EPA, NOAA, and Ohio state
+          sources so beachgoers can check conditions before getting in.
+        </div>
+        <div class="credits-purpose">
+          <strong>How to read the map</strong><br>
+          • Each dot represents a monitored beach.<br>
+          • Dot color shows the current safety status (Safe / Caution / Danger).<br>
+          • Tap a dot to view the advisory text, toxin levels, and data source.<br><br>
+          <strong>Report button</strong><br>
+          • Use <strong>Report</strong> to share water conditions you observe
+          (algae blooms, discoloration, odor, foam).<br>
+          • Reports appear on the map as <em>Unverified</em> until cross-checked
+          with official data.<br>
+          • Reports are informational only and do not trigger emergency services.
+        </div>
+        <button class="credits-close-btn" id="credits-close">Close</button>
+      </div>
+    </div>
+
+    <!-- ================================================================
+         REPORT SUBMISSION MODAL
+         ================================================================ -->
+    <div class="report-modal" id="report-modal">
+      <div class="report-modal-content">
+        <div id="report-form-container">
+          <div class="report-modal-header">
+            <div class="report-modal-title">📷 Submit a Report</div>
+            <button class="report-modal-close" id="report-modal-close">✕</button>
+          </div>
+          <form id="report-form">
+            <!-- Description field (maps to 'description' in User Reports layer) -->
+            <div class="form-group">
+              <label class="form-label">What did you observe? <span class="required">*</span></label>
+              <textarea class="form-textarea" id="report-description"
+                placeholder="Describe what you saw (e.g., green algae scum near shore, strong odor, water discoloration...)"
+                required></textarea>
+            </div>
+
+            <!-- Location picker -->
+            <div class="form-group">
+              <label class="form-label">Location <span class="required">*</span></label>
+              <div class="location-picker">
+                <div class="location-picker-header">
+                  <div class="location-status pending" id="location-status">
+                    <span>📍</span>
+                    <span id="location-status-text">No location selected</span>
+                  </div>
+                </div>
+                <div class="location-buttons">
+                  <button type="button" class="location-btn" id="use-gps-btn">
+                    <span>📍</span> Use My Location
+                  </button>
+                  <button type="button" class="location-btn" id="pick-map-btn">
+                    <span>🗺️</span> Pick on Map
+                  </button>
+                </div>
+                <div class="location-mini-map" id="location-mini-map">
+                  <div id="mini-map-view"></div>
+                  <div class="mini-map-instructions">Tap map to adjust pin location</div>
+                </div>
+              </div>
+            </div>
+
+            <!-- Reporter name (maps to 'reporter_name' in User Reports layer) -->
+            <div class="form-group">
+              <label class="form-label">Your Name (optional)</label>
+              <input type="text" class="form-input" id="reporter-name"
+                placeholder="Anonymous if left blank" />
+            </div>
+
+            <button type="submit" class="submit-btn" id="submit-btn">
+              <span>📤</span><span>Submit Report</span>
+            </button>
+          </form>
+        </div>
+
+        <!-- Success message after submission -->
+        <div class="success-message" id="success-message">
+          <div class="success-icon">✅</div>
+          <div class="success-title">Report Submitted!</div>
+          <div class="success-text">
+            Thank you for helping keep Lake Erie beaches safe. Your report
+            is now visible on the map and will be verified against official data.
+          </div>
+          <button class="success-close-btn" id="success-close-btn">Close</button>
+        </div>
+      </div>
+    </div>
+
+    <!-- ================================================================
+         FOOTER - Beach count by status
+         ================================================================ -->
+    <div id="footer">
+      <div class="footer-stat">
+        <div class="stat-value stat-danger" id="count-danger">0</div>
+        <div class="stat-label">Danger</div>
+      </div>
+      <div class="footer-stat">
+        <div class="stat-value stat-caution" id="count-caution">0</div>
+        <div class="stat-label">Caution</div>
+      </div>
+      <div class="footer-stat">
+        <div class="stat-value stat-safe" id="count-safe">0</div>
+        <div class="stat-label">Safe</div>
+      </div>
+      <div class="footer-stat">
+        <div class="stat-value stat-unknown" id="count-unknown">0</div>
+        <div class="stat-label">Unknown</div>
+      </div>
+    </div>
+
+    <!-- ================================================================
+         MAIN JAVASCRIPT
+         ArcGIS JS API – Map, FeatureLayers, Popups, Report Submission
+         ================================================================ -->
+    <script>
+      require([
+        "esri/Map",
+        "esri/views/MapView",
+        "esri/layers/FeatureLayer",
+        "esri/layers/GraphicsLayer",
+        "esri/Graphic",
+        "esri/geometry/Point",
+        "esri/symbols/SimpleMarkerSymbol",
+        "esri/renderers/UniqueValueRenderer",
+      ], function (
+        Map,
+        MapView,
+        FeatureLayer,
+        GraphicsLayer,
+        Graphic,
+        Point,
+        SimpleMarkerSymbol,
+        UniqueValueRenderer
+      ) {
+        // ================================================================
+        // CONFIGURATION
+        // These URLs point to the two SafeShores hosted feature layers.
+        // They are publicly shared and editable so no authentication is necessary.
+        // ================================================================
+        const BEACHES_URL =
+          "https://services3.arcgis.com/AtQjS5hQ6XmHbuOb/arcgis/rest/services/SafeShores_Beaches/FeatureServer";
+        const REPORTS_URL =
+          "https://services3.arcgis.com/AtQjS5hQ6XmHbuOb/arcgis/rest/services/SafeShores_User_Reports/FeatureServer";
+
+        // Status-to-color mapping (Safe=green, Caution=yellow, Danger=red)
+        const STATUS_COLORS = {
+          safe: "#48bb78",
+          caution: "#ecc94b",
+          danger: "#e53e3e",
+          unknown: "#a0aec0",
+        };
+
+        // State variables for report location picking
+        let isPickingLocation = false,
+          selectedLocation = null,
+          locationAccuracy = null,
+          view = null,
+          beachesLayer = null,
+          reportsLayer = null,
+          miniMapView = null,
+          miniMapGraphicsLayer = null;
+
+        // ================================================================
+        // BEACH POPUP TEMPLATE
+        // Generates the HTML content for beach point popups.
+        // Reads from: beach_name, status, advisory_text, Toxin_level,
+        //             Last_updated, source_url
+        // ================================================================
+        function createBeachPopup(feature) {
+          var attrs = feature.graphic.attributes;
+          var beachName = attrs.beach_name || "Unknown Beach";
+          var status = (attrs.status || "unknown").toLowerCase();
+          var advisoryText = attrs.advisory_text || "No data available.";
+          var toxinLevel = attrs.Toxin_level;
+          var lastUpdated = attrs.Last_updated;
+          var sourceUrl = attrs.source_url || "";
+
+          // Format toxin display
+          var toxinDisplay = "--";
+          if (toxinLevel !== null && toxinLevel !== undefined) {
+            toxinDisplay = Number(toxinLevel).toFixed(1);
+          }
+
+          // Format timestamp
+          var updatedDisplay = "Unknown";
+          if (lastUpdated) {
+            try {
+              var dt = new Date(lastUpdated);
+              updatedDisplay = new Intl.DateTimeFormat("en-US", {
+                timeZone: "America/New_York",
+                year: "numeric",
+                month: "2-digit",
+                day: "2-digit",
+                hour: "numeric",
+                minute: "2-digit",
+                hour12: true,
+                timeZoneName: "short",
+              }).format(dt);
+            } catch (e) {
+              updatedDisplay = String(lastUpdated);
+            }
+          }
+
+          // Determine advisory CSS class
+          var advisoryClass = "popup-advisory";
+          if (status === "danger") advisoryClass += " danger-advisory";
+          else if (status === "caution") advisoryClass += " caution-advisory";
+
+          // Source link
+          var sourceHtml = "";
+          if (sourceUrl) {
+            sourceHtml =
+              '<div class="popup-source">' +
+              '<a href="' + sourceUrl + '" target="_blank" rel="noopener">View data source</a>' +
+              " &bull; Updated: " + updatedDisplay +
+              "</div>";
+          } else {
+            sourceHtml =
+              '<div class="popup-source">Updated: ' + updatedDisplay + "</div>";
+          }
+
+          return (
+            '<div class="popup-content">' +
+            '<div class="popup-status-badge popup-status-' + status + '">' +
+            status.charAt(0).toUpperCase() + status.slice(1) +
+            "</div>" +
+            '<div class="popup-section">' +
+            '<div class="popup-section-title">Advisory</div>' +
+            '<div class="' + advisoryClass + '">' + advisoryText + "</div>" +
+            "</div>" +
+            '<div class="popup-section">' +
+            '<div class="popup-section-title">Measurements</div>' +
+            '<div class="popup-row">' +
+            '<span class="popup-label">Toxin / Indicator Level:</span>' +
+            '<span class="popup-value">' + toxinDisplay + "</span>" +
+            "</div>" +
+            "</div>" +
+            sourceHtml +
+            "</div>"
+          );
+        }
+
+        // ================================================================
+        // USER REPORT POPUP TEMPLATE
+        // Reads from: report_date, description, verified, reporter_name
+        // ================================================================
+        function createReportPopup(feature) {
+          var attrs = feature.graphic.attributes;
+          var verified = attrs.verified || "Pending";
+          var description = attrs.description || "No description provided.";
+          var reporterName = attrs.reporter_name || "Anonymous";
+          var reportDate = attrs.report_date;
+
+          var dateDisplay = "Unknown date";
+          if (reportDate) {
+            try {
+              dateDisplay = new Date(reportDate).toLocaleDateString("en-US", {
+                year: "numeric",
+                month: "short",
+                day: "numeric",
+              });
+            } catch (e) {
+              dateDisplay = String(reportDate);
+            }
+          }
+
+          return (
+            '<div class="popup-content">' +
+            '<div class="report-status ' + verified + '">' + verified + "</div>" +
+            '<h3 style="margin:10px 0 5px 0;color:#1a202c;">Community Report</h3>' +
+            '<div class="report-description">' + description + "</div>" +
+            '<div class="report-meta">' +
+            "Reported by " + reporterName + " on " + dateDisplay +
+            "</div>" +
+            "</div>"
+          );
+        }
+
+        // ================================================================
+        // MAP INITIALIZATION
+        // Satellite basemap centered on western Lake Erie
+        // ================================================================
+        var map = new Map({ basemap: "hybrid" });
+        view = new MapView({
+          container: "viewDiv",
+          map: map,
+          center: [-82.80, 41.60],  // Western Lake Erie
+          zoom: 9,
+          constraints: { maxZoom: 19 },
+          popup: {
+            dockEnabled: false,
+            dockOptions: { buttonEnabled: false },
+            collapseEnabled: false,
+            dragEnabled: true,
+          },
+        });
+
+        // ================================================================
+        // BEACHES LAYER (circles colored by status)
+        // UniqueValueRenderer maps 'status' field to colors
+        // ================================================================
+        var beachesRenderer = new UniqueValueRenderer({
+          field: "status",
+          defaultSymbol: new SimpleMarkerSymbol({
+            style: "circle",
+            size: 12,
+            color: "#a0aec0",
+            outline: { color: "white", width: 2 },
+          }),
+          uniqueValueInfos: Object.entries(STATUS_COLORS).map(
+            function (entry) {
+              return {
+                value: entry[0],
+                symbol: new SimpleMarkerSymbol({
+                  style: "circle",
+                  size: 12,
+                  color: entry[1],
+                  outline: { color: "white", width: 2 },
+                }),
+              };
+            }
+          ),
+        });
+        beachesLayer = new FeatureLayer({
+          url: BEACHES_URL,
+          title: "Monitored Beaches",
+          renderer: beachesRenderer,
+          popupTemplate: {
+            title: "{beach_name}",
+            content: createBeachPopup,
+          },
+          outFields: ["*"],
+        });
+        map.add(beachesLayer);
+
+        // ================================================================
+        // USER REPORTS LAYER (diamonds colored by verified status)
+        // ================================================================
+        var reportsRenderer = new UniqueValueRenderer({
+          field: "verified",
+          defaultSymbol: new SimpleMarkerSymbol({
+            style: "diamond",
+            size: 14,
+            color: "#dd6b20",
+            outline: { color: "white", width: 2 },
+          }),
+          uniqueValueInfos: [
+            {
+              value: "Pending",
+              symbol: new SimpleMarkerSymbol({
+                style: "diamond",
+                size: 14,
+                color: "#dd6b20",
+                outline: { color: "white", width: 2 },
+              }),
+            },
+            {
+              value: "Yes",
+              symbol: new SimpleMarkerSymbol({
+                style: "diamond",
+                size: 14,
+                color: "#48bb78",
+                outline: { color: "white", width: 2 },
+              }),
+            },
+            {
+              value: "Unverified",
+              symbol: new SimpleMarkerSymbol({
+                style: "diamond",
+                size: 14,
+                color: "#dd6b20",
+                outline: { color: "white", width: 2 },
+              }),
+            },
+            {
+              value: "Expired",
+              symbol: new SimpleMarkerSymbol({
+                style: "diamond",
+                size: 14,
+                color: "#a0aec0",
+                outline: { color: "white", width: 2 },
+              }),
+            },
+          ],
+        });
+        reportsLayer = new FeatureLayer({
+          url: REPORTS_URL,
+          title: "Community Reports",
+          renderer: reportsRenderer,
+          popupTemplate: {
+            title: "Community Report",
+            content: createReportPopup,
+          },
+          outFields: ["*"],
+        });
+        map.add(reportsLayer);
+
+        // ================================================================
+        // MAP READY — hide loading, initialize UI, start auto-refresh
+        // ================================================================
+        view.when(function () {
+          // Hide loading overlay
+          document.getElementById("loading").classList.add("hidden");
+          view.popup.dockEnabled = false;
+          view.popup.dockOptions = { buttonEnabled: false, breakpoint: false };
+          view.popup.collapseEnabled = false;
+
+          // Home button returns to Lake Erie overview
+          document
+            .getElementById("home-btn")
+            .addEventListener("click", function () {
+              view.goTo(
+                { center: [-82.80, 41.60], zoom: 9 },
+                { duration: 1000, easing: "ease-in-out" }
+              );
+            });
+
+          // Initial data load
+          updateStatistics();
+          beachesLayer
+            .when(function () {
+              console.log("Beaches layer loaded successfully");
+              updateConditionsWidget();
+            })
+            .catch(function (error) {
+              console.error("Error loading beaches layer:", error);
+            });
+
+          // Auto-refresh every 2 minutes (matches CliffWatch pattern)
+          setInterval(function () {
+            beachesLayer.refresh();
+            reportsLayer.refresh();
+            updateStatistics();
+            updateConditionsWidget();
+          }, 120000);
+        });
+
+        // ================================================================
+        // updateStatistics() — query beach counts by status for footer
+        // ================================================================
+        function updateStatistics() {
+          var statsQuery = beachesLayer.createQuery();
+          statsQuery.where = "1=1";
+          statsQuery.outFields = ["status"];
+          statsQuery.returnGeometry = false;
+          beachesLayer.queryFeatures(statsQuery).then(function (results) {
+            var counts = { danger: 0, caution: 0, safe: 0, unknown: 0 };
+            results.features.forEach(function (feature) {
+              var s = (feature.attributes.status || "unknown").toLowerCase();
+              if (counts.hasOwnProperty(s)) counts[s]++;
+              else counts.unknown++;
+            });
+            document.getElementById("count-danger").textContent = counts.danger;
+            document.getElementById("count-caution").textContent = counts.caution;
+            document.getElementById("count-safe").textContent = counts.safe;
+            document.getElementById("count-unknown").textContent = counts.unknown;
+            updateStatusBadge(counts);
+          });
+        }
+
+        // ================================================================
+        // updateStatusBadge() — set header badge to worst active status
+        // ================================================================
+        function updateStatusBadge(counts) {
+          var badge = document.getElementById("status-badge"),
+            icon = document.getElementById("status-icon"),
+            text = document.getElementById("status-text");
+          badge.className = "";
+
+          if (counts.danger > 0) {
+            badge.classList.add("status-danger");
+            icon.textContent = "⚠️";
+            text.textContent = "Danger";
+            showAlertBanner("danger", "⚠️ " + counts.danger + " beach(es) at DANGER level");
+          } else if (counts.caution > 0) {
+            badge.classList.add("status-caution");
+            icon.textContent = "⚡";
+            text.textContent = "Caution";
+            showAlertBanner("caution", "⚡ " + counts.caution + " beach(es) at CAUTION level");
+          } else {
+            badge.classList.add("status-safe");
+            icon.textContent = "✓";
+            text.textContent = "All Safe";
+            hideAlertBanner();
+          }
+        }
+
+        function showAlertBanner(level, message) {
+          var banner = document.getElementById("alert-banner");
+          banner.className = "show " + level;
+          banner.textContent = message;
+          document.getElementById("conditions-widget").classList.add("with-alert");
+        }
+        function hideAlertBanner() {
+          document.getElementById("alert-banner").className = "";
+          document.getElementById("conditions-widget").classList.remove("with-alert");
+        }
+
+        // ================================================================
+        // updateConditionsWidget() — populate top-right conditions box
+        // ================================================================
+        function updateConditionsWidget() {
+          var query = beachesLayer.createQuery();
+          query.where = "1=1";
+          query.outFields = ["status", "Toxin_level", "Last_updated"];
+          query.returnGeometry = false;
+          beachesLayer
+            .queryFeatures(query)
+            .then(function (results) {
+              if (results.features.length === 0) return;
+
+              // Find max toxin level and count statuses
+              var maxToxin = 0;
+              var advisoryCount = 0;
+              var safeCount = 0;
+              var latestUpdate = null;
+
+              results.features.forEach(function (f) {
+                var a = f.attributes;
+                var s = (a.status || "unknown").toLowerCase();
+                if (s === "danger" || s === "caution") advisoryCount++;
+                if (s === "safe") safeCount++;
+                if (a.Toxin_level != null && a.Toxin_level > maxToxin)
+                  maxToxin = a.Toxin_level;
+                if (a.Last_updated && (!latestUpdate || a.Last_updated > latestUpdate))
+                  latestUpdate = a.Last_updated;
+              });
+
+              // Update toxin display
+              var toxinEl = document.getElementById("current-toxin");
+              toxinEl.textContent = maxToxin > 0 ? maxToxin.toFixed(1) : "N/A";
+              toxinEl.className =
+                "condition-value" +
+                (maxToxin >= 8 ? " high" : maxToxin >= 4 ? " elevated" : "");
+
+              // Update advisory count
+              var advEl = document.getElementById("current-advisories");
+              advEl.textContent = advisoryCount > 0 ? advisoryCount + " active" : "None";
+              advEl.className =
+                "condition-value" + (advisoryCount > 0 ? " elevated" : "");
+
+              // Update safe count
+              document.getElementById("current-safe-count").textContent =
+                safeCount + " / " + results.features.length;
+
+              // Update timestamp
+              if (latestUpdate) {
+                var updatedEl = document.getElementById("app-updated");
+                var dt = new Date(latestUpdate);
+                var fmt = new Intl.DateTimeFormat("en-US", {
+                  timeZone: "America/New_York",
+                  month: "2-digit",
+                  day: "2-digit",
+                  hour: "numeric",
+                  minute: "2-digit",
+                  hour12: true,
+                  timeZoneName: "short",
+                });
+                updatedEl.textContent = "Data updated: " + fmt.format(dt);
+              }
+            })
+            .catch(function (error) {
+              console.error("Failed to query conditions data:", error);
+            });
+        }
+
+        // ================================================================
+        // REPORT SUBMISSION LOGIC
+        // Handles GPS, map-pick, and form submission to User Reports layer
+        // ================================================================
+        var reportBtn = document.getElementById("report-btn"),
+          reportModal = document.getElementById("report-modal"),
+          reportForm = document.getElementById("report-form"),
+          useGpsBtn = document.getElementById("use-gps-btn"),
+          pickMapBtn = document.getElementById("pick-map-btn"),
+          successMessage = document.getElementById("success-message");
+
+        reportBtn.addEventListener("click", function () {
+          if (isPickingLocation) {
+            isPickingLocation = false;
+            reportBtn.classList.remove("picking-mode");
+            reportBtn.innerHTML = '<span class="btn-icon">📷</span><span>Report</span>';
+          } else {
+            reportModal.classList.add("show");
+            resetReportForm();
+          }
+        });
+
+        document.getElementById("report-modal-close").addEventListener("click", function () {
+          reportModal.classList.remove("show");
+          if (isPickingLocation) {
+            isPickingLocation = false;
+            reportBtn.classList.remove("picking-mode");
+            reportBtn.innerHTML = '<span class="btn-icon">📷</span><span>Report</span>';
+          }
+        });
+
+        // GPS location button
+        useGpsBtn.addEventListener("click", function () {
+          if (!navigator.geolocation) {
+            alert("Geolocation is not supported by your browser");
+            return;
+          }
+          updateLocationStatus("pending", "Getting location...");
+          navigator.geolocation.getCurrentPosition(
+            function (position) {
+              selectedLocation = {
+                latitude: position.coords.latitude,
+                longitude: position.coords.longitude,
+              };
+              locationAccuracy = position.coords.accuracy;
+              updateLocationStatus("success", "Location found (±" + Math.round(locationAccuracy) + "m)");
+              showMiniMap(selectedLocation.latitude, selectedLocation.longitude);
+              useGpsBtn.classList.add("active");
+              pickMapBtn.classList.remove("active");
+            },
+            function (error) {
+              var msg = error.code === error.PERMISSION_DENIED
+                ? "Location permission denied"
+                : "Unable to get location";
+              updateLocationStatus("pending", msg);
+              alert(msg);
+            },
+            { enableHighAccuracy: true, timeout: 10000 }
+          );
+        });
+
+        // Pick-on-map button
+        pickMapBtn.addEventListener("click", function () {
+          reportModal.classList.remove("show");
+          isPickingLocation = true;
+          reportBtn.classList.add("picking-mode");
+          reportBtn.innerHTML = '<span class="btn-icon">✕</span><span>Cancel</span>';
+          alert("Tap on the map to select the location");
+        });
+
+        // Map click handler for location picking
+        view.on("click", function (event) {
+          if (!isPickingLocation) return;
+          selectedLocation = {
+            latitude: event.mapPoint.latitude,
+            longitude: event.mapPoint.longitude,
+          };
+          locationAccuracy = 10;
+          isPickingLocation = false;
+          reportBtn.classList.remove("picking-mode");
+          reportBtn.innerHTML = '<span class="btn-icon">📷</span><span>Report</span>';
+          reportModal.classList.add("show");
+          updateLocationStatus("success", "Location selected from map");
+          showMiniMap(selectedLocation.latitude, selectedLocation.longitude);
+          pickMapBtn.classList.add("active");
+          useGpsBtn.classList.remove("active");
+        });
+
+        function updateLocationStatus(status, text) {
+          document.getElementById("location-status").className = "location-status " + status;
+          document.getElementById("location-status-text").textContent = text;
+        }
+
+        // Mini-map for confirming/adjusting report location
+        function showMiniMap(lat, lon) {
+          var miniMapContainer = document.getElementById("location-mini-map");
+          miniMapContainer.classList.add("show");
+          if (miniMapView) {
+            updateMiniMapPin(lat, lon);
+            miniMapView.goTo({ center: [lon, lat], zoom: 18 });
+            return;
+          }
+          miniMapGraphicsLayer = new GraphicsLayer();
+          var miniMap = new Map({ basemap: "hybrid", layers: [miniMapGraphicsLayer] });
+          miniMapView = new MapView({
+            container: "mini-map-view",
+            map: miniMap,
+            center: [lon, lat],
+            zoom: 18,
+            constraints: { minZoom: 15, maxZoom: 20 },
+            ui: { components: [] },
+            popup: { enabled: false },
+          });
+          miniMapView.when(function () {
+            updateMiniMapPin(lat, lon);
+            miniMapView.on("click", function (event) {
+              selectedLocation = {
+                latitude: event.mapPoint.latitude,
+                longitude: event.mapPoint.longitude,
+              };
+              locationAccuracy = 10;
+              updateMiniMapPin(event.mapPoint.latitude, event.mapPoint.longitude);
+              updateLocationStatus("success", "Location adjusted");
+            });
+          });
+        }
+
+        function updateMiniMapPin(lat, lon) {
+          if (!miniMapGraphicsLayer) return;
+          miniMapGraphicsLayer.removeAll();
+          miniMapGraphicsLayer.addMany([
+            new Graphic({
+              geometry: new Point({ longitude: lon, latitude: lat }),
+              symbol: new SimpleMarkerSymbol({
+                style: "circle", size: 28,
+                color: [13, 115, 119, 0.2],
+                outline: { color: [13, 115, 119, 0.6], width: 2 },
+              }),
+            }),
+            new Graphic({
+              geometry: new Point({ longitude: lon, latitude: lat }),
+              symbol: new SimpleMarkerSymbol({
+                style: "circle", size: 16,
+                color: [13, 115, 119, 0.8],
+                outline: { color: [255, 255, 255], width: 3 },
+              }),
+            }),
+          ]);
+        }
+
+        function destroyMiniMap() {
+          if (miniMapView) { miniMapView.destroy(); miniMapView = null; }
+          miniMapGraphicsLayer = null;
+          document.getElementById("location-mini-map").classList.remove("show");
+        }
+
+        function resetReportForm() {
+          reportForm.reset();
+          selectedLocation = null;
+          locationAccuracy = null;
+          destroyMiniMap();
+          updateLocationStatus("pending", "No location selected");
+          useGpsBtn.classList.remove("active");
+          pickMapBtn.classList.remove("active");
+          document.getElementById("report-form-container").style.display = "block";
+          successMessage.classList.remove("show");
+        }
+
+        // ================================================================
+        // FORM SUBMISSION
+        // Writes to the SafeShores_User_Reports feature layer.
+        // Fields: report_date, description, verified, reporter_name
+        // ================================================================
+        reportForm.addEventListener("submit", async function (e) {
+          e.preventDefault();
+          if (!selectedLocation) {
+            alert("Please select a location");
+            return;
+          }
+          var submitBtn = document.getElementById("submit-btn");
+          submitBtn.disabled = true;
+          submitBtn.innerHTML = "<span>Submitting...</span>";
+
+          try {
+            var feature = {
+              geometry: {
+                type: "point",
+                latitude: selectedLocation.latitude,
+                longitude: selectedLocation.longitude,
+              },
+              attributes: {
+                description: document.getElementById("report-description").value,
+                reporter_name: document.getElementById("reporter-name").value || "Anonymous",
+                report_date: Date.now(),
+                verified: "Pending",
+              },
+            };
+
+            var result = await reportsLayer.applyEdits({
+              addFeatures: [new Graphic(feature)],
+            });
+
+            if (
+              result.addFeatureResults.length > 0 &&
+              !result.addFeatureResults[0].error
+            ) {
+              document.getElementById("report-form-container").style.display = "none";
+              successMessage.classList.add("show");
+              reportsLayer.refresh();
+            } else {
+              throw new Error("Failed to submit report");
+            }
+          } catch (error) {
+            console.error("Error submitting report:", error);
+            alert("Error submitting report. Please try again.");
+          } finally {
+            submitBtn.disabled = false;
+            submitBtn.innerHTML = "<span>📤</span><span>Submit Report</span>";
+          }
+        });
+
+        // Close success message
+        document.getElementById("success-close-btn").addEventListener("click", function () {
+          reportModal.classList.remove("show");
+          resetReportForm();
+        });
+      });
+
+      // ================================================================
+      // SHARE / INSTALL MODAL LOGIC
+      // Detects platform and shows appropriate install instructions
+      // ================================================================
+      (function () {
+        var shareBtn = document.getElementById("share-btn"),
+          shareModal = document.getElementById("share-modal"),
+          shareModalSteps = document.getElementById("share-modal-steps");
+
+        function isIOS() {
+          return /iPad|iPhone|iPod/.test(navigator.userAgent) && !window.MSStream;
+        }
+        function isAndroid() {
+          return /Android/.test(navigator.userAgent);
+        }
+        function isInStandaloneMode() {
+          return window.matchMedia("(display-mode: standalone)").matches || navigator.standalone;
+        }
+        function populateShareSteps() {
+          if (isInStandaloneMode())
+            shareModalSteps.innerHTML =
+              '<div class="share-modal-step"><div class="share-modal-step-num">✓</div><div><strong>Already installed!</strong></div></div>';
+          else if (isIOS())
+            shareModalSteps.innerHTML =
+              '<div class="share-modal-step"><div class="share-modal-step-num">1</div><div>Look for Safari\'s <strong>Share button</strong> (📤) at the bottom of your screen</div></div>' +
+              '<div class="share-modal-step"><div class="share-modal-step-num">2</div><div>Tap <strong>"Add to Home Screen"</strong></div></div>' +
+              '<div class="share-modal-step"><div class="share-modal-step-num">3</div><div>Tap <strong>Add</strong></div></div>';
+          else if (isAndroid())
+            shareModalSteps.innerHTML =
+              '<div class="share-modal-step"><div class="share-modal-step-num">1</div><div>Tap the <strong>⋮ menu</strong> button</div></div>' +
+              '<div class="share-modal-step"><div class="share-modal-step-num">2</div><div>Choose <strong>Add to Home Screen</strong></div></div>' +
+              '<div class="share-modal-step"><div class="share-modal-step-num">3</div><div>Tap <strong>Add</strong></div></div>';
+          else
+            shareModalSteps.innerHTML =
+              '<div class="share-modal-step"><div class="share-modal-step-num">1</div><div>Click the <strong>⋮ menu</strong> (three dots) in the top right</div></div>' +
+              '<div class="share-modal-step"><div class="share-modal-step-num">2</div><div>Select <strong>Cast, save, and share</strong></div></div>' +
+              '<div class="share-modal-step"><div class="share-modal-step-num">3</div><div>Click <strong>Create shortcut</strong></div></div>';
+        }
+        shareBtn.addEventListener("click", function () {
+          populateShareSteps();
+          shareModal.classList.add("show");
+        });
+        document.getElementById("share-modal-close").addEventListener("click", function () {
+          shareModal.classList.remove("show");
+        });
+        shareModal.addEventListener("click", function (e) {
+          if (e.target === shareModal) shareModal.classList.remove("show");
+        });
+      })();
+
+      // ================================================================
+      // WELCOME BANNER LOGIC
+      // Shows on every load (splash screen always visible, same as CliffWatch)
+      // ================================================================
+      (function () {
+        var deferredPrompt = null;
+        var installBanner = document.getElementById("install-banner"),
+          installBtn = document.getElementById("install-btn"),
+          installClose = document.getElementById("install-close");
+
+        function isInStandaloneMode() {
+          return window.matchMedia("(display-mode: standalone)").matches || navigator.standalone;
+        }
+        if (isInStandaloneMode()) return;
+
+        window.addEventListener("beforeinstallprompt", function (e) {
+          e.preventDefault();
+          deferredPrompt = e;
+        });
+
+        // Show welcome banner after 2-second delay
+        setTimeout(function () {
+          installBanner.classList.add("show");
+        }, 2000);
+
+        installBtn.addEventListener("click", async function () {
+          if (!deferredPrompt) return;
+          deferredPrompt.prompt();
+          await deferredPrompt.userChoice;
+          deferredPrompt = null;
+          installBanner.classList.remove("show");
+        });
+        installClose.addEventListener("click", function () {
+          installBanner.classList.remove("show");
+        });
+      })();
+
+      // ================================================================
+      // ABOUT / CREDITS MODAL LOGIC
+      // ================================================================
+      (function () {
+        var creditsBtn = document.getElementById("about-btn"),
+          creditsModal = document.getElementById("credits-modal");
+        creditsBtn.addEventListener("click", function () {
+          creditsModal.classList.add("show");
+        });
+        document.getElementById("credits-close").addEventListener("click", function () {
+          creditsModal.classList.remove("show");
+        });
+        document.getElementById("credits-close-x").addEventListener("click", function () {
+          creditsModal.classList.remove("show");
+        });
+        creditsModal.addEventListener("click", function (e) {
+          if (e.target === creditsModal) creditsModal.classList.remove("show");
+        });
+      })();
+
+      // ================================================================
+      // SERVICE WORKER REGISTRATION
+      // Enables offline caching and PWA install
+      // ================================================================
+      if ("serviceWorker" in navigator) {
+        navigator.serviceWorker
+          .register("sw.js")
+          .then(function (reg) {
+            console.log("Service Worker registered:", reg.scope);
+          })
+          .catch(function (err) {
+            console.log("Service Worker registration failed:", err);
+          });
+      }
+    </script>
+  </body>
+</html>
